@@ -201,34 +201,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-    private void waitForAllowedK8SStates(String k8sResourceName) {
-        ProcessBuilder builder = new ProcessBuilder();
-        String[] kubectlCommand = kubernetesCommandCreator.createKubectlGetStateCommand(k8sResourceName);
-        builder.command(kubectlCommand);
-        Process process = null;
-        try {
-            String stateOutput = "";
-            log.debug("Waiting for k8s resources state to be allowed.");
-            while (true) {
-                process = builder.start();
-                int exitCode = process.waitFor();
-                try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                    stateOutput = buffer.lines().collect(Collectors.joining(" "));
-                }
-                if (stateOutput.contains("succeeded") || stateOutput.contains("active"))
-                    break;
-                // TODO : better debugging
-                log.debug("k8s resources state output is: " + stateOutput);
-                Thread.sleep(5000);
-            }
-            log.debug("k8s resources state is allowed (output = '" + stateOutput + ").");
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-    }
-
     private void kubecltLog(String k8sResourceName) {
         log.debug("Kubectl logs thread started.");
         while (true) { // In case of early call to logs (e.g. during ContainerCreating state)
