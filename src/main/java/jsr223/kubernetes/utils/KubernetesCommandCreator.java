@@ -151,7 +151,7 @@ public class KubernetesCommandCreator {
         command.add(KubernetesPropertyLoader.getInstance().getKubectlCommand());
     }
 
-    public String[] createKubectlLogsCommand(String k8sResourceName) {
+    public String[] createKubectlLogsCommand(String k8sResourceName, boolean tailf) {
         List<String> command = new ArrayList<>();
 
         // Add kubectl command
@@ -164,7 +164,8 @@ public class KubernetesCommandCreator {
         command.add(k8sResourceName);
 
         // Add tailf-like switch
-        command.add(TAILF_PARAM_SWITCH);
+        if (tailf)
+            command.add(TAILF_PARAM_SWITCH);
 
         return command.toArray(new String[command.size()]);
     }
