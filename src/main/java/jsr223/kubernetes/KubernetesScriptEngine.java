@@ -27,6 +27,7 @@ package jsr223.kubernetes;
 
 import java.io.*;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 
 import javax.script.AbstractScriptEngine;
@@ -52,6 +53,8 @@ import lombok.NoArgsConstructor;
  */
 @NoArgsConstructor
 public class KubernetesScriptEngine extends AbstractScriptEngine {
+
+    private CountDownLatch countDownLatch = new CountDownLatch(1);
 
     private static final Logger log = Logger.getLogger(KubernetesScriptEngine.class);
 
@@ -87,7 +90,13 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         waitForCompletedK8SStates(k8sResourceName);
 
         // Step 4: job has finished, notified logger thread to stop it
-        logger.interrupt();
+        try {
+            countDownLatch.await();
+            Thread.sleep(2000);
+            logger.interrupt();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
 
         // Step 5: cleaning resources and artifacts
         cleanResources();
@@ -203,11 +212,12 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private void kubecltLog(String k8sResourceName) {
         log.debug("Kubectl logs thread started.");
+
         while (true) { // In case of early call to logs (e.g. during ContainerCreating state)
 
             try {
 
-                String[] kubectlCommand = kubernetesCommandCreator.createKubectlLogsCommand(k8sResourceName);
+                String[] kubectlCommand = kubernetesCommandCreator.createKubectlLogsCommand(k8sResourceName, true);
 
                 // Override current process builder
                 ProcessBuilder processBuilder = SingletonKubernetesProcessBuilderFactory.getInstance()
@@ -222,6 +232,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 process.waitFor();
 
                 if (process.exitValue() == 0) {
+                    countDownLatch.countDown();
                     processBuilderUtilities.attachStreamsToProcess(process,
                                                                    context.getWriter(),
                                                                    context.getErrorWriter(),
