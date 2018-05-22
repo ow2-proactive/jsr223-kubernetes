@@ -77,31 +77,19 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     @Override
     public Object eval(String k8s_manifest, ScriptContext context) throws ScriptException {
 
-        //Populate the bindings and the Generic Info
+        // Step 0: Populate the bindings and the Generic Info
         populateBindingAndGI();
 
         // Step 1: Creating Kubernetes resource
         String k8sResourceName = createKubernetesResources(k8s_manifest);
 
-        // Step 2: start a new thread to perform 'kubectl logs' on the newly created resource
-        Thread logger = startKubectlLogsThread(k8sResourceName);
+        // Step 2: log output
+        kubecltLog(k8sResourceName);
 
-        // Step 3: wait for job completion
-        waitForCompletedK8SStates(k8sResourceName);
-
-        // Step 4: job has finished, notified logger thread to stop it
-        try {
-            countDownLatch.await();
-            Thread.sleep(2000);
-            logger.interrupt();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
-        // Step 5: cleaning resources and artifacts
+        // Step 3: cleaning resources and artifacts
         cleanResources();
 
-        // Step 5: clean and exit
+        // Step 4: exit
         Object resultValue = true;
         return resultValue;
     }
@@ -144,7 +132,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             process = processBuilder.start();
             int exitValue = process.waitFor();
             if (exitValue != 0) {
-                stopAndRemoveContainers().waitFor();
+                stopAndRemoveK8sResources().waitFor();
                 throw new ScriptException("Kubernetes resources creation has failed with exit code " + exitValue);
             }
             try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
@@ -152,15 +140,11 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             }
         } catch (IOException e) {
             cleanResources();
-            throw new ScriptException("Error. Check if kubectl is installed on the PA node, and if it is configured properly ($PROACTIVE_HOME/" +
-                                      KubernetesPropertyLoader.CONFIGURATION_FILE + "). Exception: " + e);
+            throw new ScriptException("I/O error when trying to create kubernetes resources. Exiting. Exception: " + e);
         } catch (InterruptedException e1) {
             cleanResources();
-            log.info("Kubernetes task execution interrupted. " + e1.getMessage());
-            if (process != null) {
-                process.destroy();
-            }
-            return null;
+            throw new ScriptException("Interrupted when trying to create kubernetes resources. Exiting. Exception: " +
+                                      e1);
         }
     }
 
@@ -176,40 +160,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         return t;
     }
 
-    private void waitForCompletedK8SStates(String k8sResourceName) {
-        ProcessBuilder builder = new ProcessBuilder();
-        String[] kubectlCommand = kubernetesCommandCreator.createKubectlGetStateCommand(k8sResourceName);
-        builder.command(kubectlCommand);
-        Process process = null;
-        try {
-            String stateOutput = "";
-            log.debug("Waiting for k8s resources state to be completed.");
-            while (true) {
-                process = builder.start();
-                int exitCode = process.waitFor();
-                try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                    stateOutput = buffer.lines().collect(Collectors.joining(" "));
-                }
-                if (stateOutput.contains("succeeded")) {
-                    try {
-                        Thread.sleep(3000); // "safe" waiting to be sure "kubectl logs has worked at least once
-                    } catch (InterruptedException e) {
-                        log.info("Kubernetes script engine interrupted while waiting for task to complete. Exception: " +
-                                 e);
-                    }
-                    break;
-                }
-                log.debug("k8s resources state output is: " + stateOutput);
-                Thread.sleep(5000);
-            }
-            log.debug("k8s resources state is completed (output = '" + stateOutput + ").");
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-    }
-
     private void kubecltLog(String k8sResourceName) {
         log.debug("Kubectl logs thread started.");
 
@@ -223,9 +173,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 ProcessBuilder processBuilder = SingletonKubernetesProcessBuilderFactory.getInstance()
                                                                                         .getProcessBuilder(kubectlCommand);
 
-                log.debug("Logger Thread: will start as new process following command: " +
-                          String.join(" ", kubectlCommand));
-
                 Process process = processBuilder.start();
 
                 //Wait for the process to exit
@@ -233,20 +180,24 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
                 if (process.exitValue() == 0) {
                     countDownLatch.countDown();
+                    log.info(" ");
+                    log.info("[Output from kubernetes resource " + k8sResourceName + ": ]");
                     processBuilderUtilities.attachStreamsToProcess(process,
                                                                    context.getWriter(),
                                                                    context.getErrorWriter(),
                                                                    null);
+                    break;
                 } else {
-                    Thread.sleep(1000);
+                    Thread.sleep(1000); // wait for the kubernetes resource to be in appropriate state for log streaming
                 }
 
             } catch (InterruptedException e) { // TODO: define own exception KubernetesJobCompletedException
-                log.info(" ");
-                log.info("Kubernetes job finished. Stopping output logging.");
+                log.warn("Interrupted when trying to stream kubernetes resources logs. Stopping log streaming. Exception: " +
+                         e);
                 return;
             } catch (IOException e) {
-                e.printStackTrace();
+                log.warn("I/O error when trying to stream kubernetes resources logs. Stopping log streaming. Exception: " +
+                         e);
             }
         }
 
@@ -254,11 +205,11 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private void cleanResources() {
         try {
-            stopAndRemoveContainers().waitFor();
+            stopAndRemoveK8sResources().waitFor();
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            log.warn("Interrupted when trying to delete/clean kubernetes resources. Exiting. Exception: " + e);
         } catch (IOException e) {
-            e.printStackTrace();
+            log.warn("I/O error when trying to delete/clean kubernetes resources. Exiting. Exception: " + e);
         }
 
         //Delete Kubernetes manifest file
@@ -272,7 +223,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-    private Process stopAndRemoveContainers() throws IOException {
+    private Process stopAndRemoveK8sResources() throws IOException {
         return SingletonKubernetesProcessBuilderFactory.getInstance()
                                                        .getProcessBuilder(kubernetesCommandCreator.createKubectlDeleteCommand(K8S_MANIFEST_FILE_NAME))
                                                        .start();
