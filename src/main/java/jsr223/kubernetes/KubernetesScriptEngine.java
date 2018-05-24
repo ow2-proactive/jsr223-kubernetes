@@ -27,7 +27,6 @@ package jsr223.kubernetes;
 
 import java.io.*;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
 
 import javax.script.AbstractScriptEngine;
@@ -53,8 +52,6 @@ import lombok.NoArgsConstructor;
  */
 @NoArgsConstructor
 public class KubernetesScriptEngine extends AbstractScriptEngine {
-
-    private CountDownLatch countDownLatch = new CountDownLatch(1);
 
     private static final Logger log = Logger.getLogger(KubernetesScriptEngine.class);
 
@@ -179,7 +176,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 process.waitFor();
 
                 if (process.exitValue() == 0) {
-                    countDownLatch.countDown();
                     log.info(" ");
                     log.info("[Output from kubernetes resource " + k8sResourceName + ": ]");
                     processBuilderUtilities.attachStreamsToProcess(process,
