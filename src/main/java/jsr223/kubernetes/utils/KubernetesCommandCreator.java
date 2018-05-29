@@ -109,6 +109,10 @@ public class KubernetesCommandCreator {
         // Add filename
         command.add(k8sManifestFileNameAndPath);
 
+        // Make kubectl return the name of the newly created resource
+        command.add(OUTPUT_FORMAT_SWITCH);
+        command.add(NAME_OUTPUT_FORMAT);
+
         return command.toArray(new String[command.size()]);
     }
 
