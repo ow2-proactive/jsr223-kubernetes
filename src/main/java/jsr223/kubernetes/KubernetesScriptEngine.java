@@ -69,6 +69,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private Map<String, String> genericInfo;
 
+    private boolean k8sCreateOnly = false, k8sDeleteOnly = false, k8sLogStream = true;
+
     Bindings bindingsShared;
 
     @Override
@@ -77,14 +79,27 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         // Step 0: Populate the bindings and the Generic Info
         populateBindingAndGI();
 
-        // Step 1: Creating Kubernetes resource
-        String k8sResourceName = createKubernetesResources(k8s_manifest);
+        // Write the manifest file
+        writeManifestFile(k8s_manifest);
+
+        if (k8sCreateOnly) {
+            createKubernetesResources();
+        }
 
         // Step 2: log output
-        kubecltLog(k8sResourceName);
+        else if (!k8sCreateOnly && !k8sDeleteOnly) {
+            String k8sResourceName = createKubernetesResources();
+            if (k8sLogStream) kubecltLog(k8sResourceName);
+            cleanKubernetesResources();
+        }
 
         // Step 3: cleaning resources and artifacts
-        cleanResources();
+        else if (k8sDeleteOnly) {
+            cleanKubernetesResources();
+        }
+
+        // Delete manifest file
+        deleteManifestFile();
 
         // Step 4: exit
         Object resultValue = true;
@@ -104,17 +119,22 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         // Retrieving Generic Info
         genericInfo = (Map<String, String>) context.getBindings(ScriptContext.ENGINE_SCOPE)
                                                    .get(SchedulerConstants.GENERIC_INFO_BINDING_NAME);
+
+        if (genericInfo != null) {
+            if (genericInfo.containsKey("K8S_CREATE_ONLY")) {
+                k8sCreateOnly = Boolean.valueOf(genericInfo.get("K8S_CREATE_ONLY"));
+            }
+            if (genericInfo.containsKey("K8S_DELETE_ONLY")) {
+                k8sDeleteOnly = Boolean.valueOf(genericInfo.get("K8S_DELETE_ONLY"));
+            }
+            if (genericInfo.containsKey("K8S_STREAM_LOGS")) {
+                k8sDeleteOnly = Boolean.valueOf(genericInfo.get("K8S_STREAM_LOGS"));
+            }
+        }
     }
 
-    private String createKubernetesResources(String k8s_manifest) throws ScriptException {
+    private String createKubernetesResources() throws ScriptException {
         log.info("Creating Kubernetes resources from manifest.");
-
-        // Write k8s manifest to file
-        try {
-            k8sManifestFile = k8SManifestFileWriter.forceFileToDisk(k8s_manifest, K8S_MANIFEST_FILE_NAME);
-        } catch (IOException e) {
-            log.warn("Failed to write content to kubernetes manifest file: ", e);
-        }
 
         // Prepare kubectl command
         String[] kubectlCommand = kubernetesCommandCreator.createKubectlCreateCommand(K8S_MANIFEST_FILE_NAME);
@@ -129,32 +149,36 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             process = processBuilder.start();
             int exitValue = process.waitFor();
             if (exitValue != 0) {
-                stopAndRemoveK8sResources().waitFor();
+                Process k8s_delete_process = SingletonKubernetesProcessBuilderFactory.getInstance()
+                                                                                     .getProcessBuilder(kubernetesCommandCreator.createKubectlDeleteCommand(K8S_MANIFEST_FILE_NAME))
+                                                                                     .start();
+                k8s_delete_process.waitFor();
                 throw new ScriptException("Kubernetes resources creation has failed with exit code " + exitValue);
             }
             try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                return buffer.lines().collect(Collectors.joining(" "));
+                String created_resource = buffer.lines().collect(Collectors.joining(" "));
+                log.info("Successfully created K8S resource: " + created_resource);
+                return created_resource;
             }
         } catch (IOException e) {
-            cleanResources();
+            cleanKubernetesResources();
+            deleteManifestFile();
             throw new ScriptException("I/O error when trying to create kubernetes resources. Exiting. Exception: " + e);
         } catch (InterruptedException e1) {
-            cleanResources();
+            cleanKubernetesResources();
+            deleteManifestFile();
             throw new ScriptException("Interrupted when trying to create kubernetes resources. Exiting. Exception: " +
                                       e1);
         }
     }
 
-    private Thread startKubectlLogsThread(String k8sResourceName) {
-        log.info("Attaching kubernetes jobs output logger:");
-        log.info(" ");
-        String finalK8sResourceName = k8sResourceName;
-        Runnable kubectl_logs_thread = () -> {
-            kubecltLog(finalK8sResourceName);
-        };
-        Thread t = new Thread(kubectl_logs_thread);
-        t.start();
-        return t;
+    private void writeManifestFile(String k8s_manifest) {
+        // Write k8s manifest to file
+        try {
+            k8sManifestFile = k8SManifestFileWriter.forceFileToDisk(k8s_manifest, K8S_MANIFEST_FILE_NAME);
+        } catch (IOException e) {
+            log.warn("Failed to write content to kubernetes manifest file: ", e);
+        }
     }
 
     private void kubecltLog(String k8sResourceName) {
@@ -199,16 +223,27 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     }
 
-    private void cleanResources() {
+    private String cleanKubernetesResources() {
         try {
-            stopAndRemoveK8sResources().waitFor();
+            Process k8s_delete_process = SingletonKubernetesProcessBuilderFactory.getInstance()
+                                                                                 .getProcessBuilder(kubernetesCommandCreator.createKubectlDeleteCommand(K8S_MANIFEST_FILE_NAME))
+                                                                                 .start();
+            k8s_delete_process.waitFor();
+            try (BufferedReader buffer = new BufferedReader(new InputStreamReader(k8s_delete_process.getInputStream()))) {
+                String deleted_resource = buffer.lines().collect(Collectors.joining(" "));
+                log.info("Successfully deleted K8S resource: " + deleted_resource);
+                return deleted_resource;
+            }
         } catch (InterruptedException e) {
             log.warn("Interrupted when trying to delete/clean kubernetes resources. Exiting. Exception: " + e);
         } catch (IOException e) {
             log.warn("I/O error when trying to delete/clean kubernetes resources. Exiting. Exception: " + e);
         }
 
-        //Delete Kubernetes manifest file
+        return null;
+    }
+
+    private void deleteManifestFile() {
         if (k8sManifestFile != null) {
             boolean deleted = k8sManifestFile.delete();
             if (!deleted) {
@@ -217,12 +252,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 k8sManifestFile = null;
             }
         }
-    }
-
-    private Process stopAndRemoveK8sResources() throws IOException {
-        return SingletonKubernetesProcessBuilderFactory.getInstance()
-                                                       .getProcessBuilder(kubernetesCommandCreator.createKubectlDeleteCommand(K8S_MANIFEST_FILE_NAME))
-                                                       .start();
     }
 
     @Override
