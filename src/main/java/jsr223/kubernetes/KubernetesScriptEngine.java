@@ -39,11 +39,17 @@ import javax.script.SimpleBindings;
 import org.apache.log4j.Logger;
 import org.ow2.proactive.scheduler.common.SchedulerConstants;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import jsr223.kubernetes.entrypoint.EntryPoint;
 import jsr223.kubernetes.processbuilder.KubernetesProcessBuilderUtilities;
 import jsr223.kubernetes.processbuilder.SingletonKubernetesProcessBuilderFactory;
 import jsr223.kubernetes.utils.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 
 /**
@@ -88,8 +94,9 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
         // Step 2: log output
         else if (!k8sCreateOnly && !k8sDeleteOnly) {
-            String k8sResourceName = createKubernetesResources();
-            if (k8sLogStream) kubecltLog(k8sResourceName);
+            KubernetesResource k8sResource = createKubernetesResources();
+            if (k8sLogStream)
+                kubecltLog(k8sResource.getKind(), k8sResource.getName(), k8sResource.getNamespace());
             cleanKubernetesResources();
         }
 
@@ -133,7 +140,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-    private String createKubernetesResources() throws ScriptException {
+    private KubernetesResource createKubernetesResources() throws ScriptException {
         log.info("Creating Kubernetes resources from manifest.");
 
         // Prepare kubectl command
@@ -157,8 +164,17 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             }
             try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String created_resource = buffer.lines().collect(Collectors.joining(" "));
-                log.info("Successfully created K8S resource: " + created_resource);
-                return created_resource;
+
+                // Retrieve created info (kind, resource name & namespace)
+                ObjectMapper mapper = new ObjectMapper();
+                JsonNode resource_json = mapper.readTree(created_resource);
+                String kind = resource_json.get("kind").textValue().toLowerCase();
+                String resource_name = resource_json.get("metadata").get("name").textValue().toLowerCase();
+                String namespace = resource_json.get("metadata").get("namespace").textValue().toLowerCase();
+
+                log.info("Successfully created K8S resource: " + kind + '/' + resource_name + " in namespace " +
+                         namespace + ".");
+                return new KubernetesResource(kind, resource_name, namespace);
             }
         } catch (IOException e) {
             cleanKubernetesResources();
@@ -181,14 +197,16 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-    private void kubecltLog(String k8sResourceName) {
+    private void kubecltLog(String k8sResourceKind, String k8sResourceName, String k8sResourceNamespace) {
         log.debug("Kubectl logs thread started.");
 
         while (true) { // In case of early call to logs (e.g. during ContainerCreating state)
 
             try {
 
-                String[] kubectlCommand = kubernetesCommandCreator.createKubectlLogsCommand(k8sResourceName, true);
+                String[] kubectlCommand = kubernetesCommandCreator.createKubectlLogsCommand(k8sResourceKind,
+                                                                                            k8sResourceName,
+                                                                                            k8sResourceNamespace);
 
                 // Override current process builder
                 ProcessBuilder processBuilder = SingletonKubernetesProcessBuilderFactory.getInstance()
@@ -201,7 +219,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
                 if (process.exitValue() == 0) {
                     log.info(" ");
-                    log.info("[Output from kubernetes resource " + k8sResourceName + ": ]");
+                    log.info("[Output from kubernetes resource " + k8sResourceKind + '/' + k8sResourceName + ": ]");
                     processBuilderUtilities.attachStreamsToProcess(process,
                                                                    context.getWriter(),
                                                                    context.getErrorWriter(),
@@ -278,4 +296,18 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     public ScriptEngineFactory getFactory() {
         return new KubernetesScriptEngineFactory();
     }
+
+    @AllArgsConstructor
+    private class KubernetesResource {
+
+        @Getter
+        private String kind;
+
+        @Getter
+        private String name;
+
+        @Getter
+        private String namespace;
+    }
+
 }

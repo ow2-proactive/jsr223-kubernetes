@@ -82,8 +82,12 @@ public class KubernetesCommandCreator {
 
     public static final String OUTPUT_FORMAT_SWITCH = "-o";
 
+    public static final String NAMESPACE_PARAM_SWITCH = "-n";
+
     // kubectl output format
     public static final String NAME_OUTPUT_FORMAT = "name";
+
+    public static final String JSON_OUTPUT_FORMAT = "json";
 
     public static final String JSON_STATUS_OUTPUT_FORMAT = "jsonpath=\"{..status}\"";
 
@@ -140,7 +144,7 @@ public class KubernetesCommandCreator {
 
         // Make kubectl return the name of the newly created resource
         command.add(OUTPUT_FORMAT_SWITCH);
-        command.add(NAME_OUTPUT_FORMAT);
+        command.add(JSON_OUTPUT_FORMAT);
 
         return command.toArray(new String[command.size()]);
     }
@@ -155,21 +159,25 @@ public class KubernetesCommandCreator {
         command.add(KubernetesPropertyLoader.getInstance().getKubectlCommand());
     }
 
-    public String[] createKubectlLogsCommand(String k8sResourceName, boolean tailf) {
+    public String[] createKubectlLogsCommand(String k8sResourceKind, String k8sResourceName,
+            String k8sResourceNamespace) {
         List<String> command = new ArrayList<>();
 
         // Add kubectl command
         addKubectlCommand(command);
 
-        // Add kubectl directive "create"
+        // Add kubectl directive "logs"
         command.add(LOGS_K8S_RESOURCES);
 
         // Add filename param switch
-        command.add(k8sResourceName);
+        command.add(k8sResourceKind + '/' + k8sResourceName);
+
+        // Add namespace switch and namespace
+        command.add(NAMESPACE_PARAM_SWITCH);
+        command.add(k8sResourceNamespace);
 
         // Add tailf-like switch
-        if (tailf)
-            command.add(TAILF_PARAM_SWITCH);
+        command.add(TAILF_PARAM_SWITCH);
 
         return command.toArray(new String[command.size()]);
     }
