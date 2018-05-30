@@ -74,7 +74,19 @@ sourceSets {
 }
 
 dependencies {
-    compile group: 'net.sf.py4j', name: 'py4j', version: '0.10.6'
+
+    def jacksonVersion = "2.7.9"
+    compile "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}"
+    compile "com.fasterxml.jackson.core:jackson-core:${jacksonVersion}"
+    compile "com.fasterxml.jackson.core:jackson-annotations:${jacksonVersion}"
+    compile "com.fasterxml.jackson.datatype:jackson-datatype-joda:${jacksonVersion}"
+    compile "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${jacksonVersion}"
+    compile "com.fasterxml.jackson.datatype:jackson-datatype-jdk8:${jacksonVersion}"
+    compile "com.fasterxml.jackson.jaxrs:jackson-jaxrs-base:${jacksonVersion}"
+    compile "com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider:${jacksonVersion}"
+    compile "com.fasterxml.jackson.module:jackson-module-jaxb-annotations:${jacksonVersion}"
+    compile "com.fasterxml.jackson.dataformat:jackson-dataformat-cbor:${jacksonVersion}"
+
     compile 'org.projectlombok:lombok:1.16.6'
     compile 'log4j:log4j:1.2.17'
     compile 'com.google.guava:guava:19.0'
