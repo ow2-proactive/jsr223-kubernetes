@@ -34,6 +34,11 @@ import java.util.Map;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
 
+import jsr223.kubernetes.processbuilder.KubernetesProcessBuilderFactory;
+import jsr223.kubernetes.processbuilder.KubernetesProcessBuilderUtilities;
+import jsr223.kubernetes.processbuilder.SingletonKubernetesProcessBuilderFactory;
+import jsr223.kubernetes.utils.KubernetesClientVersionGetter;
+
 
 /**
  * @author ActiveEon Team
@@ -43,11 +48,14 @@ public class KubernetesScriptEngineFactory implements ScriptEngineFactory {
     static final Map<String, String> PARAMETERS = new HashMap<>();
 
     static {
+        KubernetesProcessBuilderUtilities processBuilderUtilities = new KubernetesProcessBuilderUtilities();
+        String kubectlClientVersion = new KubernetesClientVersionGetter(processBuilderUtilities).getKubernetesComposeVersion(SingletonKubernetesProcessBuilderFactory.getInstance());
         PARAMETERS.put(ScriptEngine.NAME, "kubernetes");
         PARAMETERS.put(ScriptEngine.ENGINE, "kubernetes");
         PARAMETERS.put(ScriptEngine.ENGINE_VERSION, "0.1");
         PARAMETERS.put(ScriptEngine.LANGUAGE, "yaml");
-        PARAMETERS.put(ScriptEngine.LANGUAGE_VERSION, "-");
+        PARAMETERS.put(ScriptEngine.LANGUAGE_VERSION, kubectlClientVersion);
+
     }
 
     @Override
