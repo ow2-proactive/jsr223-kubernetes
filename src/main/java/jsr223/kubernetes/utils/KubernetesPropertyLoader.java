@@ -60,8 +60,8 @@ public class KubernetesPropertyLoader {
             log.debug("Load properties from configuration file: " + CONFIGURATION_FILE);
             properties.load(getClass().getClassLoader().getResourceAsStream(CONFIGURATION_FILE));
         } catch (IOException | NullPointerException e) {
-            log.info("Configuration file " + CONFIGURATION_FILE + " not found. Standard values will be used.");
-            log.debug("Configuration file " + CONFIGURATION_FILE + " not found. Standard values will be used.", e);
+            log.debug("Configuration file " + CONFIGURATION_FILE + " not found. Standard values will be used.");
+            log.trace("Configuration file " + CONFIGURATION_FILE + " not found. Standard values will be used.", e);
         }
 
         // Get property, specify default value

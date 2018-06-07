@@ -81,7 +81,7 @@ public class KubernetesClientVersionGetter {
             Pattern p = Pattern.compile("\\d\\.\\d\\.\\d");
             Matcher m = p.matcher(result);
             if (m.matches()) {
-                log.info("kubectl client version is: " + m.group(0));
+                log.debug("kubectl client version is: " + m.group(0));
                 return m.group(0);
             } else
                 return "Unknown";
