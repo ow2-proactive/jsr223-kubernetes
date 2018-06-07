@@ -180,6 +180,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         // Prepare kubectl command
         String[] kubectlCommand = kubernetesCommandCreator.createKubectlCreateCommand(K8S_MANIFEST_FILE_NAME);
 
+        String kubectl_output = null;
+
         //Create a process builder
         Process process = null;
         ProcessBuilder processBuilder = SingletonKubernetesProcessBuilderFactory.getInstance()
@@ -189,25 +191,22 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             //Run the 'kubectl create' process
             process = processBuilder.start();
             int exitValue = process.waitFor();
-            // An error occured, we delete what we've just created.
+            // Retrieve the process stdout
+            try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                // Retrieve the 'kubectl create' JSON output
+                kubectl_output = buffer.lines().collect(Collectors.joining(" "));
+            }
             if (exitValue != 0) {
-                Process k8s_delete_process = SingletonKubernetesProcessBuilderFactory.getInstance()
-                                                                                     .getProcessBuilder(kubernetesCommandCreator.createKubectlDeleteCommand(K8S_MANIFEST_FILE_NAME))
-                                                                                     .start();
-                k8s_delete_process.waitFor();
+                // An error occured during k8s resource(s) creation.
+                log.error("Could not create the K8S resources successfully.");
+                log.error(kubectl_output);
                 throw new ScriptException("Kubernetes resources creation has failed with exit code " + exitValue);
             }
             // Creation was successful, going to parse the json output of 'kubectl' to keep track of the newly created resources
-            try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                // Retrieve the 'kubectl create' JSON output
-                String created_resource = buffer.lines().collect(Collectors.joining(" "));
-
-                // Retrieve created resource(s) info (kind, resource name & namespace)
-                JsonStreamParser parser = new JsonStreamParser(created_resource);
-                Consumer<JsonElement> k8sResourceJsonParse = (
-                        JsonElement k8sResource) -> parseK8sResourceJson(k8sResource);
-                parser.forEachRemaining(k8sResourceJsonParse);
-            }
+            JsonStreamParser parser = new JsonStreamParser(kubectl_output);
+            // Retrieve created resource(s) info (kind, resource name & namespace)
+            Consumer<JsonElement> k8sResourceJsonParse = (JsonElement k8sResource) -> parseK8sResourceJson(k8sResource);
+            parser.forEachRemaining(k8sResourceJsonParse);
         } catch (IOException e) {
             cleanKubernetesResources();
             deleteManifestFile();
