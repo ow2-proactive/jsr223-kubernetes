@@ -200,6 +200,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 // An error occured during k8s resource(s) creation.
                 log.error("Could not create the K8S resources successfully.");
                 log.error(kubectl_output);
+                cleanKubernetesResources();
+                deleteManifestFile();
                 throw new ScriptException("Kubernetes resources creation has failed with exit code " + exitValue);
             }
             // Creation was successful, going to parse the json output of 'kubectl' to keep track of the newly created resources
@@ -294,6 +296,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             } catch (InterruptedException e) { // TODO: define own exception KubernetesJobCompletedException
                 log.warn("Interrupted when trying to stream kubernetes resources logs. Stopping log streaming. Exception: " +
                          e);
+                cleanKubernetesResources();
+                deleteManifestFile();
                 return;
             } catch (IOException e) {
                 log.warn("I/O error when trying to stream kubernetes resources logs. Stopping log streaming. Exception: " +
