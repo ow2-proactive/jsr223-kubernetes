@@ -26,7 +26,10 @@
 package jsr223.kubernetes;
 
 import java.io.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import javax.script.AbstractScriptEngine;
@@ -39,17 +42,15 @@ import javax.script.SimpleBindings;
 import org.apache.log4j.Logger;
 import org.ow2.proactive.scheduler.common.SchedulerConstants;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonStreamParser;
 
 import jsr223.kubernetes.entrypoint.EntryPoint;
+import jsr223.kubernetes.model.KubernetesResource;
 import jsr223.kubernetes.processbuilder.KubernetesProcessBuilderUtilities;
 import jsr223.kubernetes.processbuilder.SingletonKubernetesProcessBuilderFactory;
 import jsr223.kubernetes.utils.*;
-import lombok.AllArgsConstructor;
-import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 
 /**
@@ -61,8 +62,10 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private static final Logger log = Logger.getLogger(KubernetesScriptEngine.class);
 
-    // Constant
+    // K8S manifest
     public static final String K8S_MANIFEST_FILE_NAME = "k8s-manifest.yml";
+
+    private File k8sManifestFile = null;
 
     // Utils
     private GenericFileWriter k8SManifestFileWriter = new GenericFileWriter();
@@ -71,13 +74,18 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private KubernetesProcessBuilderUtilities processBuilderUtilities = new KubernetesProcessBuilderUtilities();
 
-    private File k8sManifestFile = null;
-
+    // Bindings & Generic Info
     private Map<String, String> genericInfo;
 
-    private boolean k8sCreateOnly = false, k8sDeleteOnly = false, k8sLogStream = true;
-
     Bindings bindingsShared;
+
+    // Optional parameters passed within generic info to customize the script engine behavior
+    private boolean k8sCreateOnly = false, k8sDeleteOnly = false;
+
+    private String k8sResourceToStream = null;
+
+    // List of the k8s resources created by the current tasks
+    private ArrayList<KubernetesResource> k8sResourcesList = new ArrayList<KubernetesResource>();
 
     @Override
     public Object eval(String k8s_manifest, ScriptContext context) throws ScriptException {
@@ -88,19 +96,32 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         // Write the manifest file
         writeManifestFile(k8s_manifest);
 
+        // Mode 1: Only create the k8s resources
         if (k8sCreateOnly) {
             createKubernetesResources();
         }
 
-        // Step 2: log output
+        // Mode 2: Create, stream logs and delete the k8s resources
         else if (!k8sCreateOnly && !k8sDeleteOnly) {
-            KubernetesResource k8sResource = createKubernetesResources();
-            if (k8sLogStream)
-                kubecltLog(k8sResource.getKind(), k8sResource.getName(), k8sResource.getNamespace());
+            createKubernetesResources();
+            switch (k8sResourcesList.size()) {
+                case 0:
+                    throw new ScriptException("No k8s resources were created; cannot stream logs.");
+                case 1:
+                    kubecltLog(k8sResourcesList.get(0).getKind(),
+                               k8sResourcesList.get(0).getName(),
+                               k8sResourcesList.get(0).getNamespace());
+                    break;
+                default:
+                    // more than one k8s resources has been created, and we can only stream logs for one
+                    KubernetesResource chosen = chooseResourceToStream();
+                    kubecltLog(chosen.getKind(), chosen.getName(), chosen.getNamespace());
+                    break;
+            }
             cleanKubernetesResources();
         }
 
-        // Step 3: cleaning resources and artifacts
+        // Mode 3: only delete the k8s resources
         else if (k8sDeleteOnly) {
             cleanKubernetesResources();
         }
@@ -127,6 +148,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         genericInfo = (Map<String, String>) context.getBindings(ScriptContext.ENGINE_SCOPE)
                                                    .get(SchedulerConstants.GENERIC_INFO_BINDING_NAME);
 
+        // Parsing the optional parameters of the script engine provided as generic info
         if (genericInfo != null) {
             if (genericInfo.containsKey("K8S_CREATE_ONLY")) {
                 k8sCreateOnly = Boolean.valueOf(genericInfo.get("K8S_CREATE_ONLY"));
@@ -137,10 +159,22 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             if (genericInfo.containsKey("K8S_STREAM_LOGS")) {
                 k8sDeleteOnly = Boolean.valueOf(genericInfo.get("K8S_STREAM_LOGS"));
             }
+            if (genericInfo.containsKey("K8S_RESOURCE_TO_STREAM")) {
+                k8sResourceToStream = genericInfo.get("K8S_RESOURCE_TO_STREAM");
+            }
         }
     }
 
-    private KubernetesResource createKubernetesResources() throws ScriptException {
+    private void writeManifestFile(String k8s_manifest) {
+        // Write k8s manifest to file
+        try {
+            k8sManifestFile = k8SManifestFileWriter.forceFileToDisk(k8s_manifest, K8S_MANIFEST_FILE_NAME);
+        } catch (IOException e) {
+            log.warn("Failed to write content to kubernetes manifest file: ", e);
+        }
+    }
+
+    private void createKubernetesResources() throws ScriptException {
         log.info("Creating Kubernetes resources from manifest.");
 
         // Prepare kubectl command
@@ -152,9 +186,10 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                                                                                 .getProcessBuilder(kubectlCommand);
 
         try {
-            //Run the 'kubectl' process
+            //Run the 'kubectl create' process
             process = processBuilder.start();
             int exitValue = process.waitFor();
+            // An error occured, we delete what we've just created.
             if (exitValue != 0) {
                 Process k8s_delete_process = SingletonKubernetesProcessBuilderFactory.getInstance()
                                                                                      .getProcessBuilder(kubernetesCommandCreator.createKubectlDeleteCommand(K8S_MANIFEST_FILE_NAME))
@@ -162,19 +197,16 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 k8s_delete_process.waitFor();
                 throw new ScriptException("Kubernetes resources creation has failed with exit code " + exitValue);
             }
+            // Creation was successful, going to parse the json output of 'kubectl' to keep track of the newly created resources
             try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                // Retrieve the 'kubectl create' JSON output
                 String created_resource = buffer.lines().collect(Collectors.joining(" "));
 
-                // Retrieve created info (kind, resource name & namespace)
-                ObjectMapper mapper = new ObjectMapper();
-                JsonNode resource_json = mapper.readTree(created_resource);
-                String kind = resource_json.get("kind").textValue().toLowerCase();
-                String resource_name = resource_json.get("metadata").get("name").textValue().toLowerCase();
-                String namespace = resource_json.get("metadata").get("namespace").textValue().toLowerCase();
-
-                log.info("Successfully created K8S resource: " + kind + '/' + resource_name + " in namespace " +
-                         namespace + ".");
-                return new KubernetesResource(kind, resource_name, namespace);
+                // Retrieve created resource(s) info (kind, resource name & namespace)
+                JsonStreamParser parser = new JsonStreamParser(created_resource);
+                Consumer<JsonElement> k8sResourceJsonParse = (
+                        JsonElement k8sResource) -> parseK8sResourceJson(k8sResource);
+                parser.forEachRemaining(k8sResourceJsonParse);
             }
         } catch (IOException e) {
             cleanKubernetesResources();
@@ -188,12 +220,41 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-    private void writeManifestFile(String k8s_manifest) {
-        // Write k8s manifest to file
-        try {
-            k8sManifestFile = k8SManifestFileWriter.forceFileToDisk(k8s_manifest, K8S_MANIFEST_FILE_NAME);
-        } catch (IOException e) {
-            log.warn("Failed to write content to kubernetes manifest file: ", e);
+    private void parseK8sResourceJson(JsonElement resource_json) {
+        String kind = resource_json.getAsJsonObject().get("kind").getAsString().toLowerCase();
+        String name = resource_json.getAsJsonObject().get("metadata").getAsJsonObject().get("name").getAsString();
+        String namespace = resource_json.getAsJsonObject()
+                                        .get("metadata")
+                                        .getAsJsonObject()
+                                        .get("namespace")
+                                        .getAsString();
+
+        log.info("Successfully created K8S resource: " + kind + '/' + name + " in namespace " + namespace + ".");
+        k8sResourcesList.add(new KubernetesResource(kind, name, namespace));
+    }
+
+    private KubernetesResource chooseResourceToStream() {
+        // first choice: the user has specified a resource to stream within the generic info of the task
+        if (k8sResourceToStream != null) {
+            log.info("User has specified a resource to stream, will stream this one: " + k8sResourceToStream);
+            String[] resource_info = k8sResourceToStream.split("/"); // syntax is namespace/kind/name
+            return new KubernetesResource(resource_info[1], resource_info[2], resource_info[0]);
+        } else {
+            // get the list of log-streamable resources
+            List<KubernetesResource> streamableResources = k8sResourcesList.stream()
+                                                                           .filter(r -> r.isLogStreamable())
+                                                                           .collect(Collectors.toList());
+            log.info("Found " + streamableResources.size() + " log-streamable resources.");
+            // We assume at least one log streamble resource has been created
+            if (streamableResources.size() > 1) {
+                log.info("User did not specify resource to stream and more than 1 resources is streamable; selecting first one: " +
+                         streamableResources.get(0).getKind() + "/" + streamableResources.get(0).getName());
+                return streamableResources.get(0);
+            } else {
+                log.info("User did not specify resource to stream but 1 and only 1 resource is streamable; selecting this one: " +
+                         streamableResources.get(0).getKind() + "/" + streamableResources.get(0).getName());
+                return streamableResources.get(0);
+            }
         }
     }
 
@@ -224,6 +285,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                                                                    context.getWriter(),
                                                                    context.getErrorWriter(),
                                                                    null);
+                    log.info("[End of output]");
+                    log.info("");
                     break;
                 } else {
                     Thread.sleep(1000); // wait for the kubernetes resource to be in appropriate state for log streaming
@@ -296,18 +359,4 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     public ScriptEngineFactory getFactory() {
         return new KubernetesScriptEngineFactory();
     }
-
-    @AllArgsConstructor
-    private class KubernetesResource {
-
-        @Getter
-        private String kind;
-
-        @Getter
-        private String name;
-
-        @Getter
-        private String namespace;
-    }
-
 }
