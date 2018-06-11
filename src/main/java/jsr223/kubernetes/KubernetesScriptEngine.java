@@ -126,7 +126,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         // Delete manifest file
         deleteManifestFile();
 
-        // Step 4: exit
+        // Clean exit
         Object resultValue = true;
         return resultValue;
     }
@@ -209,7 +209,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         } catch (IOException e) {
             cleanKubernetesResources();
             deleteManifestFile();
-            throw new ScriptException("I/O error when trying to create kubernetes resources. Exiting.\nException: " + e);
+            throw new ScriptException("I/O error when trying to create kubernetes resources. Exiting.\nException: " +
+                                      e);
         } catch (InterruptedException e1) {
             cleanKubernetesResources();
             deleteManifestFile();
@@ -278,7 +279,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
                 if (process.exitValue() == 0) {
                     log.info(" ");
-                    log.info("[Output from kubernetes resource " + k8sResourceKind + '/' + k8sResourceName + ": ]");
+                    log.info("[Output from kubernetes resource " + resource.getKind() + '/' + resource.getName() +
+                             ": ]");
                     processBuilderUtilities.attachStreamsToProcess(process,
                                                                    context.getWriter(),
                                                                    context.getErrorWriter(),
