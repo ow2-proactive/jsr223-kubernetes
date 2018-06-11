@@ -212,11 +212,11 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         } catch (IOException e) {
             cleanKubernetesResources();
             deleteManifestFile();
-            throw new ScriptException("I/O error when trying to create kubernetes resources. Exiting. Exception: " + e);
+            throw new ScriptException("I/O error when trying to create kubernetes resources. Exiting.\nException: " + e);
         } catch (InterruptedException e1) {
             cleanKubernetesResources();
             deleteManifestFile();
-            throw new ScriptException("Interrupted when trying to create kubernetes resources. Exiting. Exception: " +
+            throw new ScriptException("Interrupted when trying to create kubernetes resources. Exiting.\nException: " +
                                       e1);
         }
     }
@@ -294,13 +294,13 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 }
 
             } catch (InterruptedException e) { // TODO: define own exception KubernetesJobCompletedException
-                log.warn("Interrupted when trying to stream kubernetes resources logs. Stopping log streaming. Exception: " +
+                log.warn("Interrupted when trying to stream kubernetes resources logs. Stopping log streaming.\nException: " +
                          e);
                 cleanKubernetesResources();
                 deleteManifestFile();
                 return;
             } catch (IOException e) {
-                log.warn("I/O error when trying to stream kubernetes resources logs. Stopping log streaming. Exception: " +
+                log.warn("I/O error when trying to stream kubernetes resources logs. Stopping log streaming.\nException: " +
                          e);
             }
         }
@@ -319,9 +319,9 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 return deleted_resource;
             }
         } catch (InterruptedException e) {
-            log.warn("Interrupted when trying to delete/clean kubernetes resources. Exiting. Exception: " + e);
+            log.warn("Interrupted when trying to delete/clean kubernetes resources. Exiting.\nException: " + e);
         } catch (IOException e) {
-            log.warn("I/O error when trying to delete/clean kubernetes resources. Exiting. Exception: " + e);
+            log.warn("I/O error when trying to delete/clean kubernetes resources. Exiting.\nException: " + e);
         }
 
         return null;
