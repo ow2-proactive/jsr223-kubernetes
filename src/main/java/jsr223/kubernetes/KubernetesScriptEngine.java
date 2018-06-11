@@ -257,7 +257,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-    private void kubecltLog(KubernetesResource resource) {
+    private void kubecltLog(KubernetesResource resource) throws ScriptException {
         log.debug("Kubectl logs thread started.");
 
         while (true) { // In case of early call to logs (e.g. during ContainerCreating state)
@@ -297,7 +297,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                          e);
                 cleanKubernetesResources();
                 deleteManifestFile();
-                return;
+                throw new ScriptException("Interrupted when trying to stream logs of kubernetes resources. Exiting.\nException: " +
+                                          e);
             } catch (IOException e) {
                 log.warn("I/O error when trying to stream kubernetes resources logs. Stopping log streaming.\nException: " +
                          e);
