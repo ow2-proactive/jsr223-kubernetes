@@ -64,23 +64,26 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     // K8S manifest file
     public static final String K8S_MANIFEST_FILE_NAME = "k8s-manifest.yml";
+
     private File k8sManifestFile = null;
 
     // Kubectl process
     private KubernetesCommandCreator kubernetesCommandCreator = new KubernetesCommandCreator();
+
     private KubernetesProcessBuilderUtilities processBuilderUtilities = new KubernetesProcessBuilderUtilities();
 
     // Bindings & Generic Info
     private Map<String, String> genericInfo;
+
     Bindings bindingsShared;
 
     // Optional parameters passed within generic info to customize the script engine behavior
     private boolean k8sCreateOnly = false, k8sDeleteOnly = false;
+
     private String k8sResourceToStream = null;
 
     // List of the k8s resources created in the current task
     private ArrayList<KubernetesResource> k8sResourcesList = new ArrayList<KubernetesResource>();
-
 
     /****************************************/
     /* Kubernetes script engine main method */
@@ -176,7 +179,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             // Creation was successful, going to parse the json output of 'kubectl' to keep track of the newly created resources
             JsonStreamParser parser = new JsonStreamParser(kubectl_output);
             // Retrieve created resource(s) info (kind, resource name & namespace)
-            Consumer<JsonElement> k8sResourceJsonParse = (JsonElement k8sResource) -> parseKubernetesResourceJson(k8sResource);
+            Consumer<JsonElement> k8sResourceJsonParse = (
+                    JsonElement k8sResource) -> parseKubernetesResourceJson(k8sResource);
             parser.forEachRemaining(k8sResourceJsonParse);
         } catch (IOException e) {
             cleanKubernetesResources();
@@ -310,7 +314,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-
     /*********************************/
     /* Script engine general methods */
     /*********************************/
@@ -327,7 +330,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
         // Retrieving Generic Info
         genericInfo = (Map<String, String>) context.getBindings(ScriptContext.ENGINE_SCOPE)
-                .get(SchedulerConstants.GENERIC_INFO_BINDING_NAME);
+                                                   .get(SchedulerConstants.GENERIC_INFO_BINDING_NAME);
 
         // Parsing the optional parameters of the script engine provided as generic info
         if (genericInfo != null) {
