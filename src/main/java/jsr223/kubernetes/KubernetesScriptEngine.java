@@ -104,18 +104,15 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         // Mode 2: Create, stream logs and delete the k8s resources
         else if (!k8sCreateOnly && !k8sDeleteOnly) {
             createKubernetesResources();
-            switch (k8sResourcesList.size()) {
+            switch (k8sResourcesList.size()) { // if multiple k8s resources have been created, need to select one for logs streaming
                 case 0:
                     throw new ScriptException("No k8s resources were created; cannot stream logs.");
                 case 1:
-                    kubecltLog(k8sResourcesList.get(0).getKind(),
-                               k8sResourcesList.get(0).getName(),
-                               k8sResourcesList.get(0).getNamespace());
+                    kubecltLog(k8sResourcesList.get(0));
                     break;
                 default:
                     // more than one k8s resources has been created, and we can only stream logs for one
-                    KubernetesResource chosen = chooseResourceToStream();
-                    kubecltLog(chosen.getKind(), chosen.getName(), chosen.getNamespace());
+                    kubecltLog(chooseResourceToStream());
                     break;
             }
             cleanKubernetesResources();
@@ -259,16 +256,16 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-    private void kubecltLog(String k8sResourceKind, String k8sResourceName, String k8sResourceNamespace) {
+    private void kubecltLog(KubernetesResource resource) {
         log.debug("Kubectl logs thread started.");
 
         while (true) { // In case of early call to logs (e.g. during ContainerCreating state)
 
             try {
 
-                String[] kubectlCommand = kubernetesCommandCreator.createKubectlLogsCommand(k8sResourceKind,
-                                                                                            k8sResourceName,
-                                                                                            k8sResourceNamespace);
+                String[] kubectlCommand = kubernetesCommandCreator.createKubectlLogsCommand(resource.getKind(),
+                                                                                            resource.getName(),
+                                                                                            resource.getNamespace());
 
                 // Override current process builder
                 ProcessBuilder processBuilder = SingletonKubernetesProcessBuilderFactory.getInstance()
