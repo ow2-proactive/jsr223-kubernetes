@@ -30,6 +30,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import javax.script.AbstractScriptEngine;
@@ -72,8 +74,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private KubernetesProcessBuilderUtilities processBuilderUtilities = new KubernetesProcessBuilderUtilities();
 
-    // Bindings & Generic Info
-    private Map<String, String> genericInfo;
+    // Bindings, variables and generic info
+    private Map<String, String> genericInfo, variables;
 
     Bindings bindingsShared;
 
@@ -140,6 +142,16 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     private void writeKubernetesManifestFile(String k8s_manifest) {
         // Write k8s manifest to file
         try {
+
+            for (Map.Entry<String, String> variable : variables.entrySet()) {
+                if (k8s_manifest.contains("${variables_" + variable.getKey() + "}")) {
+                    k8s_manifest = org.apache.commons.lang3.StringUtils.replace(k8s_manifest,
+                                                                                "${variables_" + variable.getKey() +
+                                                                                              "}",
+                                                                                variable.getValue());
+                }
+            }
+
             k8sManifestFile = new GenericFileWriter().forceFileToDisk(k8s_manifest, K8S_MANIFEST_FILE_NAME);
         } catch (IOException e) {
             log.warn("Failed to write content to kubernetes manifest file: ", e);
@@ -174,7 +186,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 log.error(kubectl_output);
                 cleanKubernetesResources();
                 deleteKubernetesManifestFile();
-                throw new ScriptException("Kubernetes resources creation has failed with exit code " + exitValue);
+                throw new ScriptException("Kubernetes resources creation has failed with exit code " + exitValue +
+                                          " . \nkubectl output is: " + kubectl_output);
             }
             // Creation was successful, going to parse the json output of 'kubectl' to keep track of the newly created resources
             JsonStreamParser parser = new JsonStreamParser(kubectl_output);
@@ -347,6 +360,10 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 k8sResourceToStream = genericInfo.get("K8S_RESOURCE_TO_STREAM");
             }
         }
+
+        // Retrieving passed variables if any
+        variables = (Map<String, String>) context.getBindings(ScriptContext.ENGINE_SCOPE)
+                                                 .get(SchedulerConstants.VARIABLES_BINDING_NAME);
     }
 
     @Override
