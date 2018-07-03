@@ -331,19 +331,20 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private void setScriptEngineBehaviorFromEnv() {
         Map<String, String> environment = bindings.getEnvironment();
+        log.info("In setScriptEngineBehaviorFromEnv(), my env is: " + environment);
         // Parsing the optional parameters of the script engine provided as generic info
         if (environment != null) {
-            if (environment.containsKey("K8S_CREATE_ONLY")) {
-                k8sCreateOnly = Boolean.valueOf(environment.get("K8S_CREATE_ONLY"));
+            if (environment.containsKey("genericInformation_K8S_CREATE_ONLY")) {
+                k8sCreateOnly = Boolean.valueOf(environment.get("genericInformation_K8S_CREATE_ONLY"));
             }
-            if (environment.containsKey("K8S_DELETE_ONLY")) {
-                k8sDeleteOnly = Boolean.valueOf(environment.get("K8S_DELETE_ONLY"));
+            if (environment.containsKey("genericInformation_K8S_DELETE_ONLY")) {
+                k8sDeleteOnly = Boolean.valueOf(environment.get("genericInformation_K8S_DELETE_ONLY"));
             }
-            if (environment.containsKey("K8S_STREAM_LOGS")) {
-                k8sDeleteOnly = Boolean.valueOf(environment.get("K8S_STREAM_LOGS"));
+            if (environment.containsKey("genericInformation_K8S_STREAM_LOGS")) {
+                k8sDeleteOnly = Boolean.valueOf(environment.get("genericInformation_K8S_STREAM_LOGS"));
             }
-            if (environment.containsKey("K8S_RESOURCE_TO_STREAM")) {
-                k8sResourceToStream = environment.get("K8S_RESOURCE_TO_STREAM");
+            if (environment.containsKey("genericInformation_K8S_RESOURCE_TO_STREAM")) {
+                k8sResourceToStream = environment.get("genericInformation_K8S_RESOURCE_TO_STREAM");
             }
         }
 
