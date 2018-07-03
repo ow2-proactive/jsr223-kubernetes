@@ -331,7 +331,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private void setScriptEngineBehaviorFromEnv() {
         Map<String, String> environment = bindings.getEnvironment();
-        log.info("In setScriptEngineBehaviorFromEnv(), my env is: " + environment);
         // Parsing the optional parameters of the script engine provided as generic info
         if (environment != null) {
             if (environment.containsKey("genericInformation_K8S_CREATE_ONLY")) {
