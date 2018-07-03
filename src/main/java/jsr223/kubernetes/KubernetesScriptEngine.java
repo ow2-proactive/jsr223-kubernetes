@@ -26,9 +26,7 @@
 package jsr223.kubernetes;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -72,10 +70,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private KubernetesProcessBuilderUtilities processBuilderUtilities = new KubernetesProcessBuilderUtilities();
 
-    // Bindings, variables and generic info
-    private Map<String, String> genericInfo, variables;
-
-    Bindings bindingsShared;
+    // GI, bindings and variables
+    private BindingUtils bindings = new BindingUtils();
 
     // Optional parameters passed within generic info to customize the script engine behavior
     private boolean k8sCreateOnly = false, k8sDeleteOnly = false;
@@ -92,8 +88,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     @Override
     public Object eval(String k8s_manifest, ScriptContext context) throws ScriptException {
 
-        // Step 0: Populate the bindings and the Generic Info
-        populateBindingAndGI();
+        // Step 0: Populate the bindings and set the behavior of the script engine
+        initializeEngine();
 
         // Write the manifest file
         writeKubernetesManifestFile(k8s_manifest);
@@ -133,19 +129,23 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         return resultValue;
     }
 
+    private void initializeEngine() {
+        bindings.addBindingsAsEnvironmentVariables(context);
+        setScriptEngineBehaviorFromEnv();
+    }
+
     /**********************************************/
     /* Kubernetes script engine auxiliary methods */
     /**********************************************/
 
     private void writeKubernetesManifestFile(String k8s_manifest) {
         // Write k8s manifest to file
+        Map<String, String> environment = bindings.getEnvironment();
         try {
-
-            for (Map.Entry<String, String> variable : variables.entrySet()) {
-                if (k8s_manifest.contains("${variables_" + variable.getKey() + "}")) {
+            for (Map.Entry<String, String> variable : environment.entrySet()) {
+                if (k8s_manifest.contains("${" + variable.getKey() + "}")) {
                     k8s_manifest = org.apache.commons.lang3.StringUtils.replace(k8s_manifest,
-                                                                                "${variables_" + variable.getKey() +
-                                                                                              "}",
+                                                                                "${" + variable.getKey() + "}",
                                                                                 variable.getValue());
                 }
             }
@@ -329,39 +329,24 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     /* Script engine general methods */
     /*********************************/
 
-    private void populateBindingAndGI() throws ScriptException {
-
-        EntryPoint entryPoint = new EntryPoint();
-        bindingsShared = entryPoint.getBindings();
-        bindingsShared.putAll(context.getBindings(ScriptContext.ENGINE_SCOPE));
-        if (bindingsShared == null) {
-            throw new ScriptException("No bindings specified in the script context");
-        }
-        context.getBindings(ScriptContext.ENGINE_SCOPE).putAll(bindingsShared);
-
-        // Retrieving Generic Info
-        genericInfo = (Map<String, String>) context.getBindings(ScriptContext.ENGINE_SCOPE)
-                                                   .get(SchedulerConstants.GENERIC_INFO_BINDING_NAME);
-
+    private void setScriptEngineBehaviorFromEnv() {
+        Map<String, String> environment = bindings.getEnvironment();
         // Parsing the optional parameters of the script engine provided as generic info
-        if (genericInfo != null) {
-            if (genericInfo.containsKey("K8S_CREATE_ONLY")) {
-                k8sCreateOnly = Boolean.valueOf(genericInfo.get("K8S_CREATE_ONLY"));
+        if (environment != null) {
+            if (environment.containsKey("K8S_CREATE_ONLY")) {
+                k8sCreateOnly = Boolean.valueOf(environment.get("K8S_CREATE_ONLY"));
             }
-            if (genericInfo.containsKey("K8S_DELETE_ONLY")) {
-                k8sDeleteOnly = Boolean.valueOf(genericInfo.get("K8S_DELETE_ONLY"));
+            if (environment.containsKey("K8S_DELETE_ONLY")) {
+                k8sDeleteOnly = Boolean.valueOf(environment.get("K8S_DELETE_ONLY"));
             }
-            if (genericInfo.containsKey("K8S_STREAM_LOGS")) {
-                k8sDeleteOnly = Boolean.valueOf(genericInfo.get("K8S_STREAM_LOGS"));
+            if (environment.containsKey("K8S_STREAM_LOGS")) {
+                k8sDeleteOnly = Boolean.valueOf(environment.get("K8S_STREAM_LOGS"));
             }
-            if (genericInfo.containsKey("K8S_RESOURCE_TO_STREAM")) {
-                k8sResourceToStream = genericInfo.get("K8S_RESOURCE_TO_STREAM");
+            if (environment.containsKey("K8S_RESOURCE_TO_STREAM")) {
+                k8sResourceToStream = environment.get("K8S_RESOURCE_TO_STREAM");
             }
         }
 
-        // Retrieving passed variables if any
-        variables = (Map<String, String>) context.getBindings(ScriptContext.ENGINE_SCOPE)
-                                                 .get(SchedulerConstants.VARIABLES_BINDING_NAME);
     }
 
     @Override
