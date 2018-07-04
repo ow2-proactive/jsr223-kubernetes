@@ -38,12 +38,10 @@ import javax.script.ScriptException;
 import javax.script.SimpleBindings;
 
 import org.apache.log4j.Logger;
-import org.ow2.proactive.scheduler.common.SchedulerConstants;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonStreamParser;
 
-import jsr223.kubernetes.entrypoint.EntryPoint;
 import jsr223.kubernetes.model.KubernetesResource;
 import jsr223.kubernetes.processbuilder.KubernetesProcessBuilderUtilities;
 import jsr223.kubernetes.processbuilder.SingletonKubernetesProcessBuilderFactory;
@@ -148,20 +146,16 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     }
 
     private void writeKubernetesManifestFile(String k8s_manifest) {
-        // Write k8s manifest to file
-        Map<String, String> environment = bindings.getEnvironment();
+        // Substitute workflow/task variable to real values onto the k8s manifest file
+        String k8s_manifest_with_substitution = VariablesSubstitutor.replaceRecursively(k8s_manifest,
+                                                                                        bindings.getK8sEngineMetadata());
+        Map<String, String> environment = bindings.getK8sEngineMetadata();
         try {
-            for (Map.Entry<String, String> variable : environment.entrySet()) {
-                if (k8s_manifest.contains("${" + variable.getKey() + "}")) {
-                    k8s_manifest = org.apache.commons.lang3.StringUtils.replace(k8s_manifest,
-                                                                                "${" + variable.getKey() + "}",
-                                                                                variable.getValue());
-                }
-            }
-
-            k8sManifestFile = new GenericFileWriter().forceFileToDisk(k8s_manifest, K8S_MANIFEST_FILE_NAME);
+            // Writing the newly generated manifest
+            k8sManifestFile = new GenericFileWriter().forceFileToDisk(k8s_manifest_with_substitution,
+                                                                      K8S_MANIFEST_FILE_NAME);
         } catch (IOException e) {
-            log.warn("Failed to write content to kubernetes manifest file: ", e);
+            log.error("Failed to write content to kubernetes manifest file: ", e);
         }
     }
 
@@ -193,7 +187,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 log.error(kubectl_output);
                 cleanKubernetesResources();
                 deleteKubernetesManifestFile();
-                throw new ScriptException("Kubernetes resources creation has failed with exit code " + exitValue +
+                throw new ScriptException("Kubernetes resources creation has failed. Exit code " + exitValue +
                                           " . \nkubectl output is: " + kubectl_output);
             }
             // Creation was successful, going to parse the json output of 'kubectl' to keep track of the newly created resources
