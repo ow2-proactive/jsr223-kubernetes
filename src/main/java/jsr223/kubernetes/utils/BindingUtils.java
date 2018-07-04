@@ -40,9 +40,9 @@ public class BindingUtils {
 
     // GI, bindings and variables
     @Getter
-    Map<String, String> environment;
+    Map<String, String> k8sEngineMetadata;
 
-    private void addMapBindingAsEnvironmentVariable(String bindingKey, Map<?, ?> bindingValue,
+    private void addMapBindingAsEngineMetadata(String bindingKey, Map<?, ?> bindingValue,
             Map<String, String> environment) {
         for (Map.Entry<?, ?> entry : ((Map<?, ?>) bindingValue).entrySet()) {
             environment.put(bindingKey + "_" + entry.getKey(),
@@ -54,7 +54,7 @@ public class BindingUtils {
         return value == null ? "" : value.toString();
     }
 
-    private void addCollectionBindingAsEnvironmentVariable(String bindingKey, Collection bindingValue,
+    private void addCollectionBindingAsEngineMetadata(String bindingKey, Collection bindingValue,
             Map<String, String> environment) {
         Object[] bindingValueAsArray = bindingValue.toArray();
         addArrayBindingAsEnvironmentVariable(bindingKey, bindingValueAsArray, environment);
@@ -68,23 +68,23 @@ public class BindingUtils {
         }
     }
 
-    public void addBindingsAsEnvironmentVariables(ScriptContext scriptContext) {
+    public void addBindingsAsEngineMetadata(ScriptContext scriptContext) {
 
         // Init.
-        environment = new HashMap();
+        k8sEngineMetadata = new HashMap();
 
         for (Map.Entry<String, Object> binding : scriptContext.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {
             String bindingKey = binding.getKey();
             Object bindingValue = binding.getValue();
 
             if (bindingValue instanceof Object[]) {
-                addArrayBindingAsEnvironmentVariable(bindingKey, (Object[]) bindingValue, environment);
+                addArrayBindingAsEnvironmentVariable(bindingKey, (Object[]) bindingValue, k8sEngineMetadata);
             } else if (bindingValue instanceof Collection) {
-                addCollectionBindingAsEnvironmentVariable(bindingKey, (Collection) bindingValue, environment);
+                addCollectionBindingAsEngineMetadata(bindingKey, (Collection) bindingValue, k8sEngineMetadata);
             } else if (bindingValue instanceof Map) {
-                addMapBindingAsEnvironmentVariable(bindingKey, (Map<?, ?>) bindingValue, environment);
+                addMapBindingAsEngineMetadata(bindingKey, (Map<?, ?>) bindingValue, k8sEngineMetadata);
             } else {
-                environment.put(bindingKey, toEmptyStringIfNull(binding.getValue()));
+                k8sEngineMetadata.put(bindingKey, toEmptyStringIfNull(binding.getValue()));
             }
         }
     }

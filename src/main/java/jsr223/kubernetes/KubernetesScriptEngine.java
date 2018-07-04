@@ -81,6 +81,15 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     // List of the k8s resources created in the current task
     private ArrayList<KubernetesResource> k8sResourcesList = new ArrayList<KubernetesResource>();
 
+    // Constants
+    public static final String GI_K8S_CREATE_ONLY = "genericInformation_K8S_CREATE_ONLY";
+
+    public static final String GI_K8S_DELETE_ONLY = "genericInformation_K8S_DELETE_ONLY";
+
+    public static final String GI_K8S_STREAM_LOGS = "genericInformation_K8S_STREAM_LOGS";
+
+    public static final String GI_K8S_RESOURCE_TO_STREAM = "genericInformation_K8S_RESOURCE_TO_STREAM";
+
     /****************************************/
     /* Kubernetes script engine main method */
     /****************************************/
@@ -129,14 +138,14 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         return resultValue;
     }
 
-    private void initializeEngine() {
-        bindings.addBindingsAsEnvironmentVariables(context);
-        setScriptEngineBehaviorFromEnv();
-    }
-
     /**********************************************/
     /* Kubernetes script engine auxiliary methods */
     /**********************************************/
+
+    private void initializeEngine() {
+        bindings.addBindingsAsEngineMetadata(context);
+        setScriptEngineBehaviorFromEnv();
+    }
 
     private void writeKubernetesManifestFile(String k8s_manifest) {
         // Write k8s manifest to file
@@ -325,29 +334,29 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-    /*********************************/
-    /* Script engine general methods */
-    /*********************************/
-
     private void setScriptEngineBehaviorFromEnv() {
-        Map<String, String> environment = bindings.getEnvironment();
+        Map<String, String> environment = bindings.getK8sEngineMetadata();
         // Parsing the optional parameters of the script engine provided as generic info
         if (environment != null) {
-            if (environment.containsKey("genericInformation_K8S_CREATE_ONLY")) {
-                k8sCreateOnly = Boolean.valueOf(environment.get("genericInformation_K8S_CREATE_ONLY"));
+            if (environment.containsKey(GI_K8S_CREATE_ONLY)) {
+                k8sCreateOnly = Boolean.valueOf(environment.get(GI_K8S_CREATE_ONLY));
             }
-            if (environment.containsKey("genericInformation_K8S_DELETE_ONLY")) {
-                k8sDeleteOnly = Boolean.valueOf(environment.get("genericInformation_K8S_DELETE_ONLY"));
+            if (environment.containsKey(GI_K8S_DELETE_ONLY)) {
+                k8sDeleteOnly = Boolean.valueOf(environment.get(GI_K8S_DELETE_ONLY));
             }
-            if (environment.containsKey("genericInformation_K8S_STREAM_LOGS")) {
-                k8sDeleteOnly = Boolean.valueOf(environment.get("genericInformation_K8S_STREAM_LOGS"));
+            if (environment.containsKey(GI_K8S_STREAM_LOGS)) {
+                k8sDeleteOnly = Boolean.valueOf(environment.get(GI_K8S_STREAM_LOGS));
             }
-            if (environment.containsKey("genericInformation_K8S_RESOURCE_TO_STREAM")) {
-                k8sResourceToStream = environment.get("genericInformation_K8S_RESOURCE_TO_STREAM");
+            if (environment.containsKey(GI_K8S_RESOURCE_TO_STREAM)) {
+                k8sResourceToStream = environment.get(GI_K8S_RESOURCE_TO_STREAM);
             }
         }
 
     }
+
+    /*********************************/
+    /* Script engine general methods */
+    /*********************************/
 
     @Override
     public Object eval(Reader reader, ScriptContext context) throws ScriptException {
