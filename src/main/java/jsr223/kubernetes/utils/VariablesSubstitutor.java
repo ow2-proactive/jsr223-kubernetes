@@ -52,7 +52,6 @@ public class VariablesSubstitutor {
                                                       K8S_MANIFEST_CUSTOM_VAR_SYNTAX_SUFF, variable.getValue());
                     anyReplacement = anyReplacement || !newOutput.equals(output);
                     output = newOutput;
-                    System.out.println("I found.");
                 }
             }
 
