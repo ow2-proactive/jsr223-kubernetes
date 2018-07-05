@@ -26,9 +26,7 @@
 package jsr223.kubernetes;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -40,12 +38,10 @@ import javax.script.ScriptException;
 import javax.script.SimpleBindings;
 
 import org.apache.log4j.Logger;
-import org.ow2.proactive.scheduler.common.SchedulerConstants;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonStreamParser;
 
-import jsr223.kubernetes.entrypoint.EntryPoint;
 import jsr223.kubernetes.model.KubernetesResource;
 import jsr223.kubernetes.processbuilder.KubernetesProcessBuilderUtilities;
 import jsr223.kubernetes.processbuilder.SingletonKubernetesProcessBuilderFactory;
@@ -72,10 +68,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private KubernetesProcessBuilderUtilities processBuilderUtilities = new KubernetesProcessBuilderUtilities();
 
-    // Bindings & Generic Info
-    private Map<String, String> genericInfo;
-
-    Bindings bindingsShared;
+    // GI, bindings and variables
+    private BindingUtils bindings = new BindingUtils();
 
     // Optional parameters passed within generic info to customize the script engine behavior
     private boolean k8sCreateOnly = false, k8sDeleteOnly = false;
@@ -85,6 +79,15 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     // List of the k8s resources created in the current task
     private ArrayList<KubernetesResource> k8sResourcesList = new ArrayList<KubernetesResource>();
 
+    // Constants
+    public static final String GI_K8S_CREATE_ONLY = "genericInformation_K8S_CREATE_ONLY";
+
+    public static final String GI_K8S_DELETE_ONLY = "genericInformation_K8S_DELETE_ONLY";
+
+    public static final String GI_K8S_STREAM_LOGS = "genericInformation_K8S_STREAM_LOGS";
+
+    public static final String GI_K8S_RESOURCE_TO_STREAM = "genericInformation_K8S_RESOURCE_TO_STREAM";
+
     /****************************************/
     /* Kubernetes script engine main method */
     /****************************************/
@@ -92,8 +95,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     @Override
     public Object eval(String k8s_manifest, ScriptContext context) throws ScriptException {
 
-        // Step 0: Populate the bindings and the Generic Info
-        populateBindingAndGI();
+        // Step 0: Populate the bindings and set the behavior of the script engine
+        initializeEngine();
 
         // Write the manifest file
         writeKubernetesManifestFile(k8s_manifest);
@@ -137,12 +140,22 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     /* Kubernetes script engine auxiliary methods */
     /**********************************************/
 
+    private void initializeEngine() {
+        bindings.addBindingsAsEngineMetadata(context);
+        setScriptEngineBehaviorFromEnv();
+    }
+
     private void writeKubernetesManifestFile(String k8s_manifest) {
-        // Write k8s manifest to file
+        // Substitute workflow/task variable to real values onto the k8s manifest file
+        String k8s_manifest_with_substitution = VariablesSubstitutor.replaceRecursively(k8s_manifest,
+                                                                                        bindings.getK8sEngineMetadata());
+        Map<String, String> environment = bindings.getK8sEngineMetadata();
         try {
-            k8sManifestFile = new GenericFileWriter().forceFileToDisk(k8s_manifest, K8S_MANIFEST_FILE_NAME);
+            // Writing the newly generated manifest
+            k8sManifestFile = new GenericFileWriter().forceFileToDisk(k8s_manifest_with_substitution,
+                                                                      K8S_MANIFEST_FILE_NAME);
         } catch (IOException e) {
-            log.warn("Failed to write content to kubernetes manifest file: ", e);
+            log.error("Failed to write content to kubernetes manifest file: ", e);
         }
     }
 
@@ -174,7 +187,8 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                 log.error(kubectl_output);
                 cleanKubernetesResources();
                 deleteKubernetesManifestFile();
-                throw new ScriptException("Kubernetes resources creation has failed with exit code " + exitValue);
+                throw new ScriptException("Kubernetes resources creation has failed. Exit code " + exitValue +
+                                          " . \nkubectl output is: " + kubectl_output);
             }
             // Creation was successful, going to parse the json output of 'kubectl' to keep track of the newly created resources
             JsonStreamParser parser = new JsonStreamParser(kubectl_output);
@@ -314,40 +328,29 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
+    private void setScriptEngineBehaviorFromEnv() {
+        Map<String, String> environment = bindings.getK8sEngineMetadata();
+        // Parsing the optional parameters of the script engine provided as generic info
+        if (environment != null) {
+            if (environment.containsKey(GI_K8S_CREATE_ONLY)) {
+                k8sCreateOnly = Boolean.valueOf(environment.get(GI_K8S_CREATE_ONLY));
+            }
+            if (environment.containsKey(GI_K8S_DELETE_ONLY)) {
+                k8sDeleteOnly = Boolean.valueOf(environment.get(GI_K8S_DELETE_ONLY));
+            }
+            if (environment.containsKey(GI_K8S_STREAM_LOGS)) {
+                k8sDeleteOnly = Boolean.valueOf(environment.get(GI_K8S_STREAM_LOGS));
+            }
+            if (environment.containsKey(GI_K8S_RESOURCE_TO_STREAM)) {
+                k8sResourceToStream = environment.get(GI_K8S_RESOURCE_TO_STREAM);
+            }
+        }
+
+    }
+
     /*********************************/
     /* Script engine general methods */
     /*********************************/
-
-    private void populateBindingAndGI() throws ScriptException {
-
-        EntryPoint entryPoint = new EntryPoint();
-        bindingsShared = entryPoint.getBindings();
-        bindingsShared.putAll(context.getBindings(ScriptContext.ENGINE_SCOPE));
-        if (bindingsShared == null) {
-            throw new ScriptException("No bindings specified in the script context");
-        }
-        context.getBindings(ScriptContext.ENGINE_SCOPE).putAll(bindingsShared);
-
-        // Retrieving Generic Info
-        genericInfo = (Map<String, String>) context.getBindings(ScriptContext.ENGINE_SCOPE)
-                                                   .get(SchedulerConstants.GENERIC_INFO_BINDING_NAME);
-
-        // Parsing the optional parameters of the script engine provided as generic info
-        if (genericInfo != null) {
-            if (genericInfo.containsKey("K8S_CREATE_ONLY")) {
-                k8sCreateOnly = Boolean.valueOf(genericInfo.get("K8S_CREATE_ONLY"));
-            }
-            if (genericInfo.containsKey("K8S_DELETE_ONLY")) {
-                k8sDeleteOnly = Boolean.valueOf(genericInfo.get("K8S_DELETE_ONLY"));
-            }
-            if (genericInfo.containsKey("K8S_STREAM_LOGS")) {
-                k8sDeleteOnly = Boolean.valueOf(genericInfo.get("K8S_STREAM_LOGS"));
-            }
-            if (genericInfo.containsKey("K8S_RESOURCE_TO_STREAM")) {
-                k8sResourceToStream = genericInfo.get("K8S_RESOURCE_TO_STREAM");
-            }
-        }
-    }
 
     @Override
     public Object eval(Reader reader, ScriptContext context) throws ScriptException {
