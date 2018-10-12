@@ -172,9 +172,24 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         ProcessBuilder processBuilder = SingletonKubernetesProcessBuilderFactory.getInstance()
                                                                                 .getProcessBuilder(kubectlCommand);
 
+        // Needed to guarantee cleanup in case of kill
+        Thread shutdownHook = null;
+
         try {
             //Run the 'kubectl create' process
             process = processBuilder.start();
+
+            //Add a shutdownHook to remove the kubernetes pod in case of kill
+            shutdownHook = new Thread() {
+                @Override
+                public void run() {
+                    cleanKubernetesResources();
+                    deleteKubernetesManifestFile();
+                }
+            };
+            Runtime.getRuntime().addShutdownHook(shutdownHook);
+
+            //Wait for process to run
             int exitValue = process.waitFor();
             // Retrieve the process stdout
             try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
@@ -206,6 +221,10 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             deleteKubernetesManifestFile();
             throw new ScriptException("Interrupted when trying to create kubernetes resources. Exiting.\nException: " +
                                       e1);
+        } finally {
+            if (shutdownHook != null) {
+                Runtime.getRuntime().removeShutdownHook(shutdownHook);
+            }
         }
     }
 
