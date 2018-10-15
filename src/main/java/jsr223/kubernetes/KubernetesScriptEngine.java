@@ -162,6 +162,19 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     private void createKubernetesResources() throws ScriptException {
         log.info("Creating Kubernetes resources from manifest.");
 
+        // Needed to guarantee cleanup in case of kill
+        Thread shutdownHook = null;
+
+        //Add a shutdownHook to remove the kubernetes pod in case of kill
+        shutdownHook = new Thread() {
+            @Override
+            public void run() {
+                cleanKubernetesResources();
+                deleteKubernetesManifestFile();
+            }
+        };
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
+
         // Prepare kubectl command
         String[] kubectlCommand = kubernetesCommandCreator.createKubectlCreateCommand(K8S_MANIFEST_FILE_NAME);
 
@@ -180,6 +193,10 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 // Retrieve the 'kubectl create' JSON output
                 kubectl_output = buffer.lines().collect(Collectors.joining(" "));
+            } finally {
+                if (shutdownHook != null) {
+                    Runtime.getRuntime().removeShutdownHook(shutdownHook);
+                }
             }
             if (exitValue != 0) {
                 // An error occured during k8s resource(s) creation.
@@ -206,6 +223,10 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             deleteKubernetesManifestFile();
             throw new ScriptException("Interrupted when trying to create kubernetes resources. Exiting.\nException: " +
                                       e1);
+        } finally {
+            if (shutdownHook != null) {
+                Runtime.getRuntime().removeShutdownHook(shutdownHook);
+            }
         }
     }
 
@@ -364,31 +385,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             log.debug("Failed to convert Reader into StringWriter. Not possible to execute Kubernetes task.", e);
         }
 
-        // Needed to guarantee cleanup in case of kill
-        Thread shutdownHook = null;
-
-        //Add a shutdownHook to remove the kubernetes pod in case of kill
-        shutdownHook = new Thread() {
-            @Override
-            public void run() {
-                cleanKubernetesResources();
-                deleteKubernetesManifestFile();
-            }
-        };
-        Runtime.getRuntime().addShutdownHook(shutdownHook);
-        Object return_val = null;
-
-        try {
-            return_val = eval(stringWriter.toString(), context);
-        } catch (Exception e) {
-
-        } finally {
-            if (shutdownHook != null) {
-                Runtime.getRuntime().removeShutdownHook(shutdownHook);
-            }
-        }
-
-        return return_val;
+        return eval(stringWriter.toString(), context);
     }
 
     @Override
