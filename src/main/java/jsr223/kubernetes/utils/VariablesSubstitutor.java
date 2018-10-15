@@ -45,7 +45,6 @@ public class VariablesSubstitutor {
             depthCount++;
 
             for (Map.Entry<String, String> variable : substitutes.entrySet()) {
-                System.out.println("I'm looking for " + variable.getKey() + " into \n\n" + output + "\n\n");
                 if (output.contains(K8S_MANIFEST_CUSTOM_VAR_SYNTAX_PREF + variable.getKey() +
                                     K8S_MANIFEST_CUSTOM_VAR_SYNTAX_SUFF)) {
                     String newOutput = output.replace(K8S_MANIFEST_CUSTOM_VAR_SYNTAX_PREF + variable.getKey() +
