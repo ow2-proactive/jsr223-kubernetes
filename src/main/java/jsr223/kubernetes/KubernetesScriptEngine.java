@@ -172,22 +172,9 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         ProcessBuilder processBuilder = SingletonKubernetesProcessBuilderFactory.getInstance()
                                                                                 .getProcessBuilder(kubectlCommand);
 
-        // Needed to guarantee cleanup in case of kill
-        Thread shutdownHook = null;
-
         try {
             //Run the 'kubectl create' process
             process = processBuilder.start();
-
-            //Add a shutdownHook to remove the kubernetes pod in case of kill
-            shutdownHook = new Thread() {
-                @Override
-                public void run() {
-                    cleanKubernetesResources();
-                    deleteKubernetesManifestFile();
-                }
-            };
-            Runtime.getRuntime().addShutdownHook(shutdownHook);
 
             //Wait for process to run
             int exitValue = process.waitFor();
@@ -221,10 +208,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             deleteKubernetesManifestFile();
             throw new ScriptException("Interrupted when trying to create kubernetes resources. Exiting.\nException: " +
                                       e1);
-        } finally {
-            if (shutdownHook != null) {
-                Runtime.getRuntime().removeShutdownHook(shutdownHook);
-            }
         }
     }
 
@@ -383,7 +366,31 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             log.debug("Failed to convert Reader into StringWriter. Not possible to execute Kubernetes task.", e);
         }
 
-        return eval(stringWriter.toString(), context);
+        // Needed to guarantee cleanup in case of kill
+        Thread shutdownHook = null;
+
+        //Add a shutdownHook to remove the kubernetes pod in case of kill
+        shutdownHook = new Thread() {
+            @Override
+            public void run() {
+                cleanKubernetesResources();
+                deleteKubernetesManifestFile();
+            }
+        };
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
+        Object return_val = null;
+
+        try {
+            return_val = eval(stringWriter.toString(), context);
+        } catch (Exception e) {
+
+        } finally {
+            if (shutdownHook != null) {
+                Runtime.getRuntime().removeShutdownHook(shutdownHook);
+            }
+        }
+
+        return return_val;
     }
 
     @Override
