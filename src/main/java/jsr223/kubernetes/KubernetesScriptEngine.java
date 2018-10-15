@@ -193,10 +193,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 // Retrieve the 'kubectl create' JSON output
                 kubectl_output = buffer.lines().collect(Collectors.joining(" "));
-            } finally {
-                if (shutdownHook != null) {
-                    Runtime.getRuntime().removeShutdownHook(shutdownHook);
-                }
             }
             if (exitValue != 0) {
                 // An error occured during k8s resource(s) creation.
