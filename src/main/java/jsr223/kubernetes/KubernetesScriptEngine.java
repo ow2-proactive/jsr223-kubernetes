@@ -175,8 +175,6 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         try {
             //Run the 'kubectl create' process
             process = processBuilder.start();
-
-            //Wait for process to run
             int exitValue = process.waitFor();
             // Retrieve the process stdout
             try (BufferedReader buffer = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
