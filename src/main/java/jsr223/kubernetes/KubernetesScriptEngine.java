@@ -162,6 +162,19 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
     private void createKubernetesResources() throws ScriptException {
         log.info("Creating Kubernetes resources from manifest.");
 
+        // Needed to guarantee cleanup in case of kill
+        Thread shutdownHook = null;
+
+        //Add a shutdownHook to remove the kubernetes pod in case of kill
+        shutdownHook = new Thread() {
+            @Override
+            public void run() {
+                cleanKubernetesResources();
+                deleteKubernetesManifestFile();
+            }
+        };
+        Runtime.getRuntime().addShutdownHook(shutdownHook);
+
         // Prepare kubectl command
         String[] kubectlCommand = kubernetesCommandCreator.createKubectlCreateCommand(K8S_MANIFEST_FILE_NAME);
 
@@ -206,6 +219,10 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
             deleteKubernetesManifestFile();
             throw new ScriptException("Interrupted when trying to create kubernetes resources. Exiting.\nException: " +
                                       e1);
+        } finally {
+            if (shutdownHook != null) {
+                Runtime.getRuntime().removeShutdownHook(shutdownHook);
+            }
         }
     }
 
