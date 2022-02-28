@@ -38,9 +38,8 @@ import javax.script.ScriptException;
 import javax.script.SimpleBindings;
 
 import org.apache.log4j.Logger;
-
-import com.google.gson.JsonElement;
-import com.google.gson.JsonStreamParser;
+import org.codehaus.jackson.JsonFactory;
+import org.codehaus.jackson.map.ObjectMapper;
 
 import jsr223.kubernetes.model.KubernetesResource;
 import jsr223.kubernetes.processbuilder.KubernetesProcessBuilderUtilities;
@@ -204,11 +203,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
                                           " . \nkubectl output is: " + kubectl_output);
             }
             // Creation was successful, going to parse the json output of 'kubectl' to keep track of the newly created resources
-            JsonStreamParser parser = new JsonStreamParser(kubectl_output);
-            // Retrieve created resource(s) info (kind, resource name & namespace)
-            Consumer<JsonElement> k8sResourceJsonParse = (
-                    JsonElement k8sResource) -> parseKubernetesResourceJson(k8sResource);
-            parser.forEachRemaining(k8sResourceJsonParse);
+            parseKubernetesResourceJson(kubectl_output);
         } catch (IOException e) {
             cleanKubernetesResources();
             deleteKubernetesManifestFile();
@@ -226,17 +221,27 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
         }
     }
 
-    private void parseKubernetesResourceJson(JsonElement resource_json) {
-        String kind = resource_json.getAsJsonObject().get("kind").getAsString().toLowerCase();
-        String name = resource_json.getAsJsonObject().get("metadata").getAsJsonObject().get("name").getAsString();
-        String namespace = resource_json.getAsJsonObject()
-                                        .get("metadata")
-                                        .getAsJsonObject()
-                                        .get("namespace")
-                                        .getAsString();
+    private void parseKubernetesResourceJson(String resource_json) {
+        try {
+            for (Iterator it = new ObjectMapper().readValues(new JsonFactory().createJsonParser(resource_json),
+                                                             Map.class); it.hasNext();) {
+                // Retrieve created resource(s) info (kind, resource name & namespace)
+                Map<String, Object> jsonObject = (Map<String, Object>) it.next();
+                Map<String, Object> metadataObject = new ObjectMapper().convertValue(jsonObject.get("metadata"),
+                                                                                     Map.class);
+                String kind = jsonObject.get("kind").toString();
+                String name = metadataObject.get("name").toString();
+                String namespace = metadataObject.get("namespace").toString();
 
-        log.info("Successfully created K8S resource: " + kind + '/' + name + " in namespace " + namespace + ".");
-        k8sResourcesList.add(new KubernetesResource(kind, name, namespace));
+                log.info("Successfully created K8S resource: " + kind + '/' + name + " in namespace " + namespace +
+                         ".");
+
+                k8sResourcesList.add(new KubernetesResource(kind, name, namespace));
+            }
+        } catch (Exception jre) {
+            throw new RuntimeException("Could not parse Kubernetes Json Resource : " + jre.getMessage(), jre);
+        }
+
     }
 
     private KubernetesResource chooseKubernetesResourceToStream() {
