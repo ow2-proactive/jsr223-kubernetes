@@ -75,7 +75,6 @@ sourceSets {
 
 dependencies {
 
-    compile 'com.google.code.gson:gson:2.8.5'
     compile 'org.apache.commons:commons-lang3:3.0'
 
     compile 'org.projectlombok:lombok:1.16.6'
