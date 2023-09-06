@@ -38,8 +38,9 @@ import javax.script.ScriptException;
 import javax.script.SimpleBindings;
 
 import org.apache.log4j.Logger;
-import org.codehaus.jackson.JsonFactory;
-import org.codehaus.jackson.map.ObjectMapper;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jsr223.kubernetes.model.KubernetesResource;
 import jsr223.kubernetes.processbuilder.KubernetesProcessBuilderUtilities;
@@ -223,7 +224,7 @@ public class KubernetesScriptEngine extends AbstractScriptEngine {
 
     private void parseKubernetesResourceJson(String resource_json) {
         try {
-            for (Iterator it = new ObjectMapper().readValues(new JsonFactory().createJsonParser(resource_json),
+            for (Iterator it = new ObjectMapper().readValues(new JsonFactory().createParser(resource_json),
                                                              Map.class); it.hasNext();) {
                 // Retrieve created resource(s) info (kind, resource name & namespace)
                 Map<String, Object> jsonObject = (Map<String, Object>) it.next();
